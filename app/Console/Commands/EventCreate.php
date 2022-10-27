@@ -18,7 +18,9 @@ use App\Models\EventInvalidEmail;
 use App\Models\EventListingEmail;
 use App\Models\RuleAction;
 use App\Models\GmailConnectionGroup;
+use App\Models\EventPlaceholder;
 use DB;
+use DOMDocument;
 use App\Models\Email;
 use App\Tools;
 use Livewire\WithPagination;
@@ -59,27 +61,56 @@ class Placeholder
 {
     public function process($text, $data_variable)
     {
-        $search  = array('*First name*', 
-                        '*Last name*', 
-                        '*Company*', 
-                        '*Website*', 
-                        '*City*',
-                        '*State*',
-                        '*Profession*', 
-                        '*Source*');
-
+        $list_placeholder =[];
+        $data =EventPlaceholder::get();
+        if(!empty($data)){
+            foreach($data as $place){
+                $list_placeholder[] = $place['name'];
+            }
+        }
+        $htmlDom = new DOMDocument;
+        @$htmlDom->loadHTML($text);
+        $anchorTags = $htmlDom->getElementsByTagName('a');
+        foreach($anchorTags as $anchorTag){
+            $aHref = $anchorTag->getAttribute('href');
+            $extractedAnchors = $aHref;
+            $parts=parse_url($extractedAnchors);
+            if(array_key_exists("query", $parts)){
+                $constructed_url = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['path'])?$parts['path']:'');
+                parse_str($parts['query'], $query);
+                foreach($list_placeholder as $place_value){
+                    $place_value =str_replace(' ', '_', strtolower($place_value));
+                    if(isset($query[''.$place_value.''])){
+                       $query[''.$place_value.''] = isset($data_variable[''.$place_value.'']) ? $data_variable[''.$place_value.''] : '';
+                    }
+                }
+                $new_params_value = http_build_query($query);
+                $new_url = $constructed_url.'?'.$new_params_value;
+                $anchorTag->setAttribute('href', $new_url);
+                $htmlDom->saveHTML();
+            }
+        }
+        $text_data= preg_replace('/^<!DOCTYPE.+?>/', '', str_replace( array('<html>', '</html>', '<body>', '</body>'), array('', '', '', ''), $htmlDom->saveHTML()));
         $variable = [];
+        $list_placeholders_new =[];
 
-        $variable[] = isset($data_variable['first_name']) ? $data_variable['first_name'] : '';
-        $variable[] = isset($data_variable['last_name']) ? $data_variable['last_name'] : '';
-        $variable[] = isset($data_variable['company_name']) ? $data_variable['company_name'] : '';
-        $variable[] = isset($data_variable['website']) ? $data_variable['website'] : '';
-        $variable[] = isset($data_variable['city']) ? $data_variable['city'] : '';
-        $variable[] = isset($data_variable['state']) ? $data_variable['state'] : '';
-        $variable[] = isset($data_variable['profession']) ? $data_variable['profession'] : '';
-        $variable[] = isset($data_variable['source']) ? $data_variable['source'] : '';
-                
-        return str_replace($search, $variable, $text);
+        // $variable[] = isset($data_variable['first_name']) ? $data_variable['first_name'] : '';
+        // $variable[] = isset($data_variable['last_name']) ? $data_variable['last_name'] : '';
+        // $variable[] = isset($data_variable['company_name']) ? $data_variable['company_name'] : '';
+        // $variable[] = isset($data_variable['website']) ? $data_variable['website'] : '';
+        // $variable[] = isset($data_variable['city']) ? $data_variable['city'] : '';
+        // $variable[] = isset($data_variable['state']) ? $data_variable['state'] : '';
+        // $variable[] = isset($data_variable['profession']) ? $data_variable['profession'] : '';
+        // $variable[] = isset($data_variable['source']) ? $data_variable['source'] : '';
+        $data_values = array_keys($data_variable);
+        foreach($list_placeholder as $placed_value){
+           $list_placeholders= str_replace(' ', '_', strtolower($placed_value));
+           if(in_array($list_placeholders,$data_values)){
+                $variable[] = isset($data_variable[''.$list_placeholders.'']) ? $data_variable[''.$list_placeholders.''] : '';
+                $list_placeholders_new[] =$placed_value;
+           }
+        }      
+        return str_replace($list_placeholders_new, $variable, $text_data);
 
     }
     
@@ -128,12 +159,12 @@ class EventCreate extends Command
                 ->select('e.id as email_id','e.email as email','ef.value','ef.type as type','event_listing_id as listing_id','eventlisting_emails.event_email_id as ee_id')
                 ->orderBy(DB::raw('RAND()'))
                 ->limit(1)->get();
-
+        $neverBounce_key = env('NEVERBOUNCE_API_KEY');
         $data_variables = [];
         foreach ($allEmailsInfos as $key => $allEmailsInfo) {
             $curl = curl_init();
             curl_setopt_array($curl, array(
-            CURLOPT_URL => 'https://api.neverbounce.com/v4/single/check?key=private_a858390e9dc3175c6e809053edc7349f&email='.$allEmailsInfo['email'].' ',
+            CURLOPT_URL => 'https://api.neverbounce.com/v4/single/check?key='.$neverBounce_key.'&email='.$allEmailsInfo['email'].' ',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
@@ -250,58 +281,18 @@ class EventCreate extends Command
                         $event_location = $templatesData->event_location;
                         // Get all event content data end
 
-                        // Update sync gmail connection start
-
-                        // $allGroupwithSync = $this->TotalAllGroupsSync($group);
-                        // $allGroupwithoutSync = $this->TotalAllGroupsWithoutSync($group);
-                        // $group_main_group_id = $allGroupwithoutSync[0]->groups_id;
-                        // $group_event_id = $allGroupwithoutSync[0]->event_id;
-                        // if(count($allGroupwithSync) == count($allGroupwithoutSync)){
-                        //     $group_sync = array('sync_status'=>'no');
-                        //     GmailConnectionGroup::where('event_id',$group_event_id)
-                        //                 ->update($group_sync);
-                        // }
-
-                        // Update sunc gamil connection end
-
                         // Get all groups from multiple list start
                         $all_connections = $this->GetAllGroups($group);
                         $gmail_id = $all_connections->email_id;
-                        // Get all groups from multiple list end
-
-                        // $email_sync_valid = EventEmailLogs::where(
-                        //                             [ 
-                        //                                 ['type', '=',$gmail_id],
-                        //                                 ['event_id', '=',$all_connections->event_id]
-                        //                             ]
-                        //                         )->get()->count();
-                        // $email_sync_invalid = EventInvalidEmail::where(
-                        //                             [ 
-                        //                                 ['type', '=',$gmail_id],
-                        //                                 ['event_id', '=',$all_connections->event_id]
-                        //                             ]
-                        //                         )->get()->count();
-                        // $total_sync_email = $email_sync_valid+$email_sync_invalid-1;
-                        // if($total_sync_email == $email_count){
-                        //     $connectionSync = array('sync_status'=>'yes');
-                        //     DB::table('gmail_connection_groups')
-                        //             ->where(
-                        //                     [ 
-                        //                         ['gmail_connection_id', '=',$all_connections->gmail_connection_id],
-                        //                         ['event_id', '=',$all_connections->event_id],
-                        //                         ['groups_id', '=', $all_connections->groups_id] 
-                        //                     ]
-                        //                 )
-                        //                 ->update($connectionSync);
-                        // }
                         
-                        // Get all emails from multiple list start
                         $allEmailArray = $this->GetAllEmails($group,$event_name,$timezone,$email_count,$gmail_id);
                         $allemail = $allEmailArray['allemail'];
                         $allEmailsArray = $allEmailArray['allEmailsArray'];
                         // Get all emails from multiple list end
                         //new code added
                         $temp_event_name = $Placeholder->process($temp_event_name, $allEmailArray['variable']);
+
+                        echo "<pre>"; print_r($temp_event_name); echo "</pre>"; die;
                         $event_content = $Placeholder->process($event_content, $allEmailArray['variable']);
                         // Event Create Code Start
                         $groups_id = $all_connections->groups_id; 
@@ -330,6 +321,7 @@ class EventCreate extends Command
                           'attendees' => $allemail,
                           'guestsCanSeeOtherGuests' => false
                         );
+
                         $curl = curl_init();
                         curl_setopt_array($curl, array(
                         CURLOPT_URL => 'https://www.googleapis.com/calendar/v3/calendars/'.$email_id.'/events?sendNotifications=true&supportsAttachments=true',
@@ -349,6 +341,7 @@ class EventCreate extends Command
                         $response = curl_exec($curl);
                         curl_close($curl);
                         $response = json_decode($response);
+
                         if(isset($response->htmlLink)){
                             foreach($allEmailsArray as $res){
                                 $valid_emails=array('email'=>$res['email'],'status'=>'valid','type' => $email_id,'event_id' => $event_id,'event_name' => $event_name,'timezone' => $event_timezone);

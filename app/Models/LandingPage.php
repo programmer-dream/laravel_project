@@ -31,6 +31,11 @@ class LandingPage extends Model
         return '';
     }
 
+    public function landingpageConnection(): HasMany
+    {
+        return $this->hasMany(LandingPage::class);
+    }
+
     public function getContentAttribute(): string
     {
         return $this->landing_template->content;
@@ -45,5 +50,6 @@ class LandingPage extends Model
     {
         return $this->belongsTo(LandingTemplate::class);
     }
+
 
 }

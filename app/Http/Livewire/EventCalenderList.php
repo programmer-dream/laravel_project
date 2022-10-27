@@ -58,15 +58,36 @@ class Placeholder
 {
     public function process($text, $data_variable)
     {
-        $search  = array('*First name*', 
-                        '*Last name*', 
-                        '*Company*', 
-                        '*Website*', 
-                        '*City*',
-                        '*State*',
-                        '*Profession*', 
-                        '*Source*');
-
+        $list_placeholder =[];
+        $data =EventPlaceholder::get();
+        if(!empty($data)){
+            foreach($data as $place){
+                $list_placeholder[] = $place['name'];
+            }
+        }
+        $htmlDom = new DOMDocument;
+        @$htmlDom->loadHTML($text);
+        $anchorTags = $htmlDom->getElementsByTagName('a');
+        foreach($anchorTags as $anchorTag){
+            $aHref = $anchorTag->getAttribute('href');
+            $extractedAnchors = $aHref;
+            $parts=parse_url($extractedAnchors);
+            if(array_key_exists("query", $parts)){
+                $constructed_url = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['path'])?$parts['path']:'');
+                parse_str($parts['query'], $query);
+                foreach($list_placeholder as $place_value){
+                    $place_value =str_replace(' ', '_', strtolower($place_value));
+                    if(isset($query[''.$place_value.''])){
+                       $query[''.$place_value.''] = isset($data_variable[''.$place_value.'']) ? $data_variable[''.$place_value.''] : '';
+                    }
+                }
+                $new_params_value = http_build_query($query);
+                $new_url = $constructed_url.$new_params_value;
+                $anchorTag->setAttribute('href', $new_url);
+                $htmlDom->saveHTML();
+            }
+        }
+        $text_data= preg_replace('/^<!DOCTYPE.+?>/', '', str_replace( array('<html>', '</html>', '<body>', '</body>'), array('', '', '', ''), $htmlDom->saveHTML()));
         $variable = [];
 
         $variable[] = isset($data_variable['first_name']) ? $data_variable['first_name'] : '';
@@ -78,7 +99,7 @@ class Placeholder
         $variable[] = isset($data_variable['profession']) ? $data_variable['profession'] : '';
         $variable[] = isset($data_variable['source']) ? $data_variable['source'] : '';
                 
-        return str_replace($search, $variable, $text);
+        return str_replace($search, $variable, $text_data);
 
     }
     

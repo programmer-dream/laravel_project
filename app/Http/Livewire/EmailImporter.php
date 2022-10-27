@@ -130,6 +130,8 @@ class EmailImporter extends Component
         $reader = Reader::createFromPath($this->file->getRealPath());
 
         $emails = collect($reader->getRecords())->map(function ($record) {
+
+            echo "<pre>"; print_r($record); echo "</pre>"; die;
             $columns = array_filter($this->columns);
             
             $key = array_search('email', $this->columns);
